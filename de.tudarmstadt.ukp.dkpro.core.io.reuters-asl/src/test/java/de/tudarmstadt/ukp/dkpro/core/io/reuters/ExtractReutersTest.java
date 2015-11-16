@@ -17,6 +17,7 @@
  ******************************************************************************/
 package de.tudarmstadt.ukp.dkpro.core.io.reuters;
 
+import org.junit.Assert;
 import org.junit.Test;
 
 import java.io.File;
@@ -36,43 +37,67 @@ public class ExtractReutersTest
     {
         int expectedDocs = 1000;
         String expectedTitleFirst = "BAHIA COCOA REVIEW";
-        String expectedDateFirst = "26-FEB-1987 15:01:01.79";
+        Date expectedDateFirst = new GregorianCalendar(1987, 1, 26, 15, 1, 1).getTime();
         String expectedBodyFirst = "Showers";
         String expectedTopicFirst = "cocoa";
+        ReutersDocument.LEWISSPLIT expectedlLewissplitFirst = ReutersDocument.LEWISSPLIT.TRAIN;
+        ReutersDocument.CGISPLIT expectedCgisplitFirst = ReutersDocument.CGISPLIT.TRAINING_SET;
+        int oldIdFirst = 5544;
+        int newIdFirst = 1;
 
         String expectedTitle4 = "NATIONAL AVERAGE PRICES FOR FARMER-OWNED RESERVE";
-        String expectedDate4 = "26-FEB-1987 15:10:44.60";
+        Date expectedDate4 = new GregorianCalendar(1987, 1, 26, 15, 10, 44).getTime();
         String expectedBody4 = "The U.S. Agriculture Department";
         Set<String> expectedTopic4 = new HashSet(
                 Arrays.asList(
                         new String[] { "grain", "wheat", "corn", "barley", "oat", "sorghum" }));
+        ReutersDocument.LEWISSPLIT expectedlLewissplit4 = ReutersDocument.LEWISSPLIT.TRAIN;
+        ReutersDocument.CGISPLIT expectedCgisplit4 = ReutersDocument.CGISPLIT.TRAINING_SET;
+        int oldId4 = 5548;
+        int newId4 = 5;
 
         String expectedTitleLast = "NATIONAL AMUSEMENTS AGAIN UPS VIACOM <VIA> BID";
-        String expectedDateLast = " 3-MAR-1987 09:17:32.30";
+        Date expectedDateLast = new GregorianCalendar(1987, 2, 3, 9, 17, 32).getTime();
         String expectedBodyLast = "Viacom International Inc said ";
         String expectedTopicLast = "acq";
+        ReutersDocument.LEWISSPLIT expectedlLewissplitLast = ReutersDocument.LEWISSPLIT.TRAIN;
+        ReutersDocument.CGISPLIT expectedCgisplitLast = ReutersDocument.CGISPLIT.TRAINING_SET;
+        int oldIdLast = 16320;
+        int newIdLast = 1000;
 
-        List<Map<String, Object>> docs = ExtractReuters.extract(new File(REUTERS_DIR).toPath());
+        List<ReutersDocument> docs = ExtractReuters.extract(new File(REUTERS_DIR).toPath());
         assertEquals(expectedDocs, docs.size());
 
         /* assert first doc */
-        Map<String, Object> doc0 = docs.get(0);
-        assertEquals(expectedTitleFirst, doc0.get("TITLE"));
-        assertEquals(expectedDateFirst, doc0.get("DATE"));
-        assertTrue(((Set<String>) doc0.get("TOPICS")).contains(expectedTopicFirst));
-        assertTrue(doc0.get("BODY").toString().startsWith(expectedBodyFirst));
+        ReutersDocument doc0 = docs.get(0);
+        assertEquals(expectedTitleFirst, doc0.getTitle());
+        assertEquals(expectedDateFirst.toString(), doc0.getDate().toString());
+        assertTrue(doc0.getTopics().contains(expectedTopicFirst));
+        assertTrue(doc0.getBody().startsWith(expectedBodyFirst));
+        Assert.assertEquals(expectedlLewissplitFirst, doc0.getLewissplit());
+        Assert.assertEquals(expectedCgisplitFirst, doc0.getCgisplit());
+        Assert.assertEquals(oldIdFirst, doc0.getOldid());
+        Assert.assertEquals(newIdFirst, doc0.getNewid());
 
-        Map<String, Object> doc4 = docs.get(4);
-        assertEquals(expectedTitle4, doc4.get("TITLE"));
-        assertEquals(expectedDate4, doc4.get("DATE"));
-        assertEquals(expectedTopic4, doc4.get("TOPICS"));
-        assertTrue(doc0.get("BODY").toString().startsWith(expectedBodyFirst));
+        ReutersDocument doc4 = docs.get(4);
+        assertEquals(expectedTitle4, doc4.getTitle());
+        assertEquals(expectedDate4.toString(), doc4.getDate().toString());
+        assertEquals(expectedTopic4, doc4.getTopics());
+        assertTrue(doc0.toString().startsWith(expectedBodyFirst));
+        Assert.assertEquals(expectedlLewissplit4, doc4.getLewissplit());
+        Assert.assertEquals(expectedCgisplit4, doc4.getCgisplit());
+        Assert.assertEquals(oldId4, doc4.getOldid());
+        Assert.assertEquals(newId4, doc4.getNewid());
 
         /* assert last doc */
-        Map<String, Object> doc999 = docs.get(999);
-        assertEquals(expectedTitleLast, doc999.get("TITLE"));
-        assertEquals(expectedDateLast, doc999.get("DATE"));
-        assertTrue(((Set<String>) doc999.get("TOPICS")).contains(expectedTopicLast));
-        assertTrue(doc999.get("BODY").toString().startsWith(expectedBodyLast));
+        ReutersDocument doc999 = docs.get(999);
+        assertEquals(expectedTitleLast, doc999.getTitle());
+        assertEquals(expectedDateLast.toString(), doc999.getDate().toString());
+        assertTrue(doc999.getTopics().contains(expectedTopicLast));
+        assertTrue(doc999.getBody().startsWith(expectedBodyLast));
+        Assert.assertEquals(expectedlLewissplitLast, doc999.getLewissplit());
+        Assert.assertEquals(expectedCgisplitLast, doc999.getCgisplit());
+        Assert.assertEquals(oldIdLast, doc999.getOldid());
+        Assert.assertEquals(newIdLast, doc999.getNewid());
     }
 }

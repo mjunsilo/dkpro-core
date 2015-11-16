@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.text.ParseException;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -39,7 +40,7 @@ public class ExtractReuters
             Arrays.asList(new String[] { "TOPICS" }));
     private static Pattern EXTRACTION_PATTERN = Pattern
             .compile(
-                    "<(TITLE)>(.*?)</TITLE>|<(DATE)>(.*?)</DATE>|<(BODY)>(.*?)</BODY>|<(TOPICS)>(.*?)</TOPICS>");
+                    " (LEWISSPLIT)=\"(.*?)\"|(CGISPLIT)=\"(.*?)\"|(OLDID)=\"(.*?)\"|(NEWID)=\"(.*?)\"|<(TITLE)>(.*?)</TITLE>|<(DATE)>(.*?)</DATE>|<(BODY)>(.*?)</BODY>|<(TOPICS)>(.*?)</TOPICS>|<(PLACES)>(.*?)</PLACES>|<(PEOPLE)>(.*?)</PEOPLE>|<(ORGS)>(.*?)</ORGS>|<(EXCHANGES)>(.*?)</EXCHANGES>|<(COMPANIES)>(.*?)</COMPANIES>|<(UNKNOWN)>(.*?)</UNKNOWN>|<(DATELINE)>(.*?)</DATELINE>");
     private static Pattern NESTED_EXTRACTION_PATTERN = Pattern.compile("<D>(.*?)</D>");
 
     private static String[] META_CHARS = { "&", "<", ">", "\"", "'" };
@@ -50,13 +51,13 @@ public class ExtractReuters
      * Reag all the SGML file in the given directory.
      *
      * @param reutersDir the directory that contains the Reuters SGML files.
-     * @return a list of maps where each map represents the contents of one document.
+     * @return a list of {@link ReutersDocument}s
      * @throws IOException if any of the files cannot be read.
      */
-    public static List<Map<String, Object>> extract(Path reutersDir)
-            throws IOException
+    public static List<ReutersDocument> extract(Path reutersDir)
+            throws IOException, ParseException
     {
-        List<Map<String, Object>> docs = new ArrayList<>();
+        List<ReutersDocument> docs = new ArrayList<>();
         DirectoryStream<Path> stream = Files.newDirectoryStream(reutersDir, "*.sgm");
         for (Path sgmFile : stream) {
             docs.addAll(extractFile(sgmFile));
@@ -68,14 +69,14 @@ public class ExtractReuters
      * Read the documents out of a single file. Each file contains approximately 1000 documents.
      *
      * @param sgmFile a Reuters SGML file.
-     * @return a list of maps where each map represents the contents of one document.
+     * @return a list of {@link ReutersDocument}s
      */
-    private static List<Map<String, Object>> extractFile(Path sgmFile)
-            throws IOException
+    private static List<ReutersDocument> extractFile(Path sgmFile)
+            throws IOException, ParseException
     {
         BufferedReader reader = Files.newBufferedReader(sgmFile, StandardCharsets.ISO_8859_1);
 
-        List<Map<String, Object>> entries = new ArrayList<>();  // collection of all documents in file
+        List<ReutersDocument> entries = new ArrayList<>();  // collection of all documents in file
         StringBuilder docBuffer = new StringBuilder(1024);  // text of current document
 
         String line;
@@ -91,7 +92,7 @@ public class ExtractReuters
             }
             else {
                 /* document end reached in input file, parse content */
-                Map<String, Object> doc = new HashMap<>();
+                ReutersDocument reutersDocument = new ReutersDocument();
 
                 // Extract the relevant pieces and write to a map representing the document
                 Matcher matcher = EXTRACTION_PATTERN.matcher(docBuffer);
@@ -99,8 +100,8 @@ public class ExtractReuters
                     /* iterate over outer tags */
                     for (int i = 1; i <= matcher.groupCount(); i += 2) {
                         if (matcher.group(i) != null) {
-                            String tag = matcher.group(i);
-                            String value = matcher.group(i + 1);
+                            String tag = matcher.group(i).trim();
+                            String value = matcher.group(i + 1).trim();
 
                             /* replace SGML characters */
                             for (int j = 0; j < META_CHARS_SERIALIZATIONS.length; j++) {
@@ -110,20 +111,17 @@ public class ExtractReuters
 
                             /* extract value(s) */
                             if (NESTED_TAGS.contains(tag)) {
-                                Set<String> all_ds = extractNested(doc, tag, value);
-                                doc.put(tag, all_ds);
+                                extractNested(reutersDocument, tag, value);
                             }
                             else {
-                                doc.put(tag, value);
+                                reutersDocument.set(tag, value);
                             }
                         }
                     }
                 }
                 /* add metadata information for current doc */
-                doc.put("PATH", sgmFile.toString());
-                doc.put("URI", sgmFile.toUri().toString());
-                doc.put("ID", sgmFile.getFileName().toString());
-                entries.add(doc);
+                reutersDocument.setPath(sgmFile);
+                entries.add(reutersDocument);
                 /* reset document buffer */
                 docBuffer.setLength(0);
             }
@@ -132,25 +130,22 @@ public class ExtractReuters
     }
 
     /**
-     * Find the {@code <D>} tags that are nested within another tag.
+     * Find the {@code <D>} tags that are nested within another tag and add them to the given {@link ReutersDocument}.
      *
-     * @param doc  the current document represented as a {@code Map<String, Object>}
+     * @param doc  the current document represented as a {@link ReutersDocument}.
      * @param tag  the outer tag, e.g. {@code <TOPICS>}
      * @param text the value of the outer tag from which nested tags are extracted
-     * @return a set of all detected values of the nested {@code <D>} tags.
      */
-    private static Set<String> extractNested(Map<String, Object> doc, String tag, String text)
+    private static void extractNested(ReutersDocument doc, String tag, String text)
+            throws ParseException
     {
         Matcher nestedMatcher = NESTED_EXTRACTION_PATTERN.matcher(text);
-        @SuppressWarnings("unchecked")
-        Set<String> all_ds = (Set<String>) doc.getOrDefault(tag, new HashSet<String>());
         while (nestedMatcher.find()) {
             /* iterate over <D> tags */
             for (int j = 1; j <= nestedMatcher.groupCount(); j++) {
-                String d = nestedMatcher.group(j);
-                all_ds.add(d);
+                String d = nestedMatcher.group(j).trim();
+                doc.set(tag, d);
             }
         }
-        return all_ds;
     }
 }
