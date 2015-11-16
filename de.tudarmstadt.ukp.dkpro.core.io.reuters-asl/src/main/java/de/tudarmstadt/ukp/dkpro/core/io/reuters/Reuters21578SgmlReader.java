@@ -18,9 +18,8 @@
 package de.tudarmstadt.ukp.dkpro.core.io.reuters;
 
 import de.tudarmstadt.ukp.dkpro.core.api.metadata.type.DocumentMetaData;
+import de.tudarmstadt.ukp.dkpro.core.api.metadata.type.MetaDataStringField;
 import de.tudarmstadt.ukp.dkpro.core.api.parameter.ComponentParameters;
-import org.apache.commons.io.FilenameUtils;
-import org.apache.commons.io.filefilter.WildcardFileFilter;
 import org.apache.uima.UimaContext;
 import org.apache.uima.cas.CAS;
 import org.apache.uima.cas.CASException;
@@ -31,90 +30,61 @@ import org.apache.uima.jcas.JCas;
 import org.apache.uima.resource.ResourceInitializationException;
 import org.apache.uima.util.Progress;
 
-import java.io.*;
-import java.util.Arrays;
-import java.util.HashMap;
+import java.io.File;
+import java.io.IOException;
 import java.util.Iterator;
 import java.util.Map;
 
 /**
- * Read a Reuters-21578 corpus that has been transformed into text format using {@code ExtractReuters} in
- * the {@code lucene-benchmarks} project.
- *
- * @see <a href="http://www.daviddlewis.com/resources/testcollections/reuters21578/">Reuters-21587 Corpus</a>
- * @see <a href="http://lucene.apache.org/core/5_3_1/benchmark/org/apache/lucene/benchmark/utils/ExtractReuters.html">ExtractReuters</a>
- * @see <a href="https://github.com/apache/mahout/blob/master/examples/bin/cluster-reuters.sh">cluster-reuters.sh</a>
+ * Read a Reuters-21578 corpus in SGML format.
+ * <p>
+ * Set the directory that contains the SGML files with {@link #PARAM_SOURCE_LOCATION}.
  */
-public class Reuters21578TxtReader
+public class Reuters21578SgmlReader
         extends JCasCollectionReader_ImplBase
 {
     /**
-     * The directory that contains the Reuters-21578 text files, named according to the pattern {@link #FILE_PATTERN}.
+     * The directory that contains the Reuters-21578 SGML files.
      */
     public static final String PARAM_SOURCE_LOCATION = ComponentParameters.PARAM_SOURCE_LOCATION;
-    private static final String FILE_PATTERN = "reut2-*.txt";
     private static final String LANGUAGE = "en";
     @ConfigurationParameter(name = PARAM_SOURCE_LOCATION, mandatory = true)
     private File sourceLocation;
-
-    private Iterator<File> fileIter;
-
-    /**
-     * Read a Reuters text file into a Map
-     *
-     * @param reutersFile a Reuters text file
-     * @return a Map with keys {@code dateline}, {@code title}, and {@code text}
-     * @throws IOException if the file cannot be read
-     */
-    private static Map<String, String> readFile(File reutersFile)
-            throws IOException
-    {
-        BufferedReader reader = new BufferedReader(new FileReader(reutersFile));
-        String dateline = reader.readLine();
-        reader.readLine(); // skip empty line
-        String title = reader.readLine();
-        reader.readLine(); // skip empty line
-        String text = reader.readLine();
-        reader.close();
-
-        Map<String, String> doc = new HashMap<>();
-        doc.put("title", title);
-        doc.put("dateline", dateline);
-        doc.put("text", text);
-
-        return doc;
-    }
+    private Iterator<Map<String, String>> docIter;
 
     @Override
     public void initialize(UimaContext context)
             throws ResourceInitializationException
     {
-        super.initialize(context);
-
-        FileFilter filter = new WildcardFileFilter(FILE_PATTERN);
-        File[] files = sourceLocation.listFiles(filter);
-
-        getLogger().info("Found " + files.length + " files.");
-        fileIter = Arrays.asList(files).iterator();
-
+        //        super.initialize();
+        try {
+            docIter = ExtractReuters.extract(sourceLocation.toPath()).iterator();
+        }
+        catch (IOException e) {
+            throw new ResourceInitializationException(e);
+        }
     }
 
     @Override public void getNext(JCas jCas)
             throws IOException, CollectionException
     {
         try {
-            initCas(jCas.getCas(), fileIter.next());
+            Map<String, String> doc = docIter.next();
+            initCas(jCas.getCas(), doc);
+            MetaDataStringField date = new MetaDataStringField(jCas);
+            date.setKey("DATE");
+            date.setValue(doc.get("DATE"));
+            date.addToIndexes();
         }
         catch (CASException e) {
             throw new CollectionException(e);
         }
-
     }
 
     @Override public boolean hasNext()
             throws IOException, CollectionException
     {
-        return fileIter.hasNext();
+        return docIter.hasNext();
     }
 
     @Override public Progress[] getProgress()
@@ -122,19 +92,17 @@ public class Reuters21578TxtReader
         return new Progress[0];
     }
 
-    private void initCas(CAS aCas, File aFile)
+    private void initCas(CAS aCas, Map<String, String> doc)
             throws IOException, CASException
     {
-        Map<String, String> doc = readFile(aFile);
         DocumentMetaData docMetaData = DocumentMetaData.create(aCas);
-        docMetaData.setDocumentTitle(doc.get("title"));
-        docMetaData.setDocumentUri(aFile.toURI().toString());
-        docMetaData.setDocumentId(aFile.getParentFile().getName() + "_"
-                + FilenameUtils.getBaseName(aFile.getName()));
+        docMetaData.setDocumentTitle(doc.get("TITLE"));
+        docMetaData.setDocumentUri(doc.get("URI"));
+        docMetaData.setDocumentId(doc.get("ID"));   // TODO: extract ID in ExtractReuters
         docMetaData.setDocumentBaseUri(sourceLocation.toURI().toString());
         docMetaData.setCollectionId(sourceLocation.getPath());
 
         aCas.setDocumentLanguage(LANGUAGE);
-        aCas.setDocumentText(doc.get("text"));
+        aCas.setDocumentText(doc.get("BODY"));
     }
 }
