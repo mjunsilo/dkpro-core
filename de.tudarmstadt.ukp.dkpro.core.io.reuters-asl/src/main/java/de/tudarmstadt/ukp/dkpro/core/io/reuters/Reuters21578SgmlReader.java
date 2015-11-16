@@ -33,6 +33,7 @@ import org.apache.uima.util.Progress;
 import java.io.File;
 import java.io.IOException;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -50,7 +51,7 @@ public class Reuters21578SgmlReader
     private static final String LANGUAGE = "en";
     @ConfigurationParameter(name = PARAM_SOURCE_LOCATION, mandatory = true)
     private File sourceLocation;
-    private Iterator<Map<String, String>> docIter;
+    private Iterator<Map<String, Object>> docIter;
 
     @Override
     public void initialize(UimaContext context)
@@ -58,7 +59,10 @@ public class Reuters21578SgmlReader
     {
         //        super.initialize();
         try {
-            docIter = ExtractReuters.extract(sourceLocation.toPath()).iterator();
+            getLogger().info("Extracting Reuters-21578 documents from " + sourceLocation);
+            List<Map<String, Object>> docs = ExtractReuters.extract(sourceLocation.toPath());
+            getLogger().info(docs.size() + " documents read.");
+            docIter = docs.iterator();
         }
         catch (IOException e) {
             throw new ResourceInitializationException(e);
@@ -69,11 +73,11 @@ public class Reuters21578SgmlReader
             throws IOException, CollectionException
     {
         try {
-            Map<String, String> doc = docIter.next();
+            Map<String, Object> doc = docIter.next();
             initCas(jCas.getCas(), doc);
             MetaDataStringField date = new MetaDataStringField(jCas);
             date.setKey("DATE");
-            date.setValue(doc.get("DATE"));
+            date.setValue((String) doc.get("DATE"));
             date.addToIndexes();
         }
         catch (CASException e) {
@@ -92,17 +96,17 @@ public class Reuters21578SgmlReader
         return new Progress[0];
     }
 
-    private void initCas(CAS aCas, Map<String, String> doc)
+    private void initCas(CAS aCas, Map<String, Object> doc)
             throws IOException, CASException
     {
         DocumentMetaData docMetaData = DocumentMetaData.create(aCas);
-        docMetaData.setDocumentTitle(doc.get("TITLE"));
-        docMetaData.setDocumentUri(doc.get("URI"));
-        docMetaData.setDocumentId(doc.get("ID"));   // TODO: extract ID in ExtractReuters
+        docMetaData.setDocumentTitle((String) doc.get("TITLE"));
+        docMetaData.setDocumentUri((String) doc.get("URI"));
+        docMetaData.setDocumentId((String) doc.get("ID"));   // TODO: extract ID in ExtractReuters
         docMetaData.setDocumentBaseUri(sourceLocation.toURI().toString());
         docMetaData.setCollectionId(sourceLocation.getPath());
 
         aCas.setDocumentLanguage(LANGUAGE);
-        aCas.setDocumentText(doc.get("BODY"));
+        aCas.setDocumentText((String) doc.get("BODY"));
     }
 }

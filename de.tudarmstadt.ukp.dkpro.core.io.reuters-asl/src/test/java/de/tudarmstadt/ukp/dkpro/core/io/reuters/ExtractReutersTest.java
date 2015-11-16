@@ -20,8 +20,7 @@ package de.tudarmstadt.ukp.dkpro.core.io.reuters;
 import org.junit.Test;
 
 import java.io.File;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import static junit.framework.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -31,6 +30,7 @@ public class ExtractReutersTest
     private static final String REUTERS_DIR = "src/test/resources/reuters-sgml";
 
     @Test
+    @SuppressWarnings("unchecked")
     public void testExtract()
             throws Exception
     {
@@ -38,22 +38,41 @@ public class ExtractReutersTest
         String expectedTitleFirst = "BAHIA COCOA REVIEW";
         String expectedDateFirst = "26-FEB-1987 15:01:01.79";
         String expectedBodyFirst = "Showers";
+        String expectedTopicFirst = "cocoa";
+
+        String expectedTitle4 = "NATIONAL AVERAGE PRICES FOR FARMER-OWNED RESERVE";
+        String expectedDate4 = "26-FEB-1987 15:10:44.60";
+        String expectedBody4 = "The U.S. Agriculture Department";
+        Set<String> expectedTopic4 = new HashSet(
+                Arrays.asList(
+                        new String[] { "grain", "wheat", "corn", "barley", "oat", "sorghum" }));
 
         String expectedTitleLast = "NATIONAL AMUSEMENTS AGAIN UPS VIACOM <VIA> BID";
         String expectedDateLast = " 3-MAR-1987 09:17:32.30";
         String expectedBodyLast = "Viacom International Inc said ";
+        String expectedTopicLast = "acq";
 
-        List<Map<String, String>> docs = ExtractReuters.extract(new File(REUTERS_DIR).toPath());
+        List<Map<String, Object>> docs = ExtractReuters.extract(new File(REUTERS_DIR).toPath());
         assertEquals(expectedDocs, docs.size());
 
         /* assert first doc */
-        assertEquals(expectedTitleFirst, docs.get(0).get("TITLE"));
-        assertEquals(expectedDateFirst, docs.get(0).get("DATE"));
-        assertTrue(docs.get(0).get("BODY").startsWith(expectedBodyFirst));
+        Map<String, Object> doc0 = docs.get(0);
+        assertEquals(expectedTitleFirst, doc0.get("TITLE"));
+        assertEquals(expectedDateFirst, doc0.get("DATE"));
+        assertTrue(((Set<String>) doc0.get("TOPICS")).contains(expectedTopicFirst));
+        assertTrue(doc0.get("BODY").toString().startsWith(expectedBodyFirst));
+
+        Map<String, Object> doc4 = docs.get(4);
+        assertEquals(expectedTitle4, doc4.get("TITLE"));
+        assertEquals(expectedDate4, doc4.get("DATE"));
+        assertEquals(expectedTopic4, doc4.get("TOPICS"));
+        assertTrue(doc0.get("BODY").toString().startsWith(expectedBodyFirst));
 
         /* assert last doc */
-        assertEquals(expectedTitleLast, docs.get(999).get("TITLE"));
-        assertEquals(expectedDateLast, docs.get(999).get("DATE"));
-        assertTrue(docs.get(999).get("BODY").startsWith(expectedBodyLast));
+        Map<String, Object> doc999 = docs.get(999);
+        assertEquals(expectedTitleLast, doc999.get("TITLE"));
+        assertEquals(expectedDateLast, doc999.get("DATE"));
+        assertTrue(((Set<String>) doc999.get("TOPICS")).contains(expectedTopicLast));
+        assertTrue(doc999.get("BODY").toString().startsWith(expectedBodyLast));
     }
 }
