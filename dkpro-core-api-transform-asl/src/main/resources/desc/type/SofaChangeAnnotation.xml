@@ -17,7 +17,7 @@
         </featureDescription>
         <featureDescription>
           <name>operation</name>
-          <description>Operation to perform: "insert", "replace", "delete"</description>
+          <description>Operation to perform: "insert", "replace", "delete" or "cut"</description>
           <rangeTypeName>uima.cas.String</rangeTypeName>
         </featureDescription>
         <featureDescription>

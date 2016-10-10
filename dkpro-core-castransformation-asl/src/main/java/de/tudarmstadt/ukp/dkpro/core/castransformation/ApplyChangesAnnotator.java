@@ -17,16 +17,20 @@
  */
 package de.tudarmstadt.ukp.dkpro.core.castransformation;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
 
+import com.google.common.collect.HashMultiset;
+import com.google.common.collect.Multiset;
+import com.google.common.collect.TreeMultimap;
 import org.apache.uima.analysis_engine.AnalysisEngineProcessException;
 import org.apache.uima.cas.CASException;
 import org.apache.uima.cas.FSIndex;
 import org.apache.uima.cas.FSIterator;
 import org.apache.uima.fit.component.JCasAnnotator_ImplBase;
 import org.apache.uima.fit.descriptor.TypeCapability;
+import org.apache.uima.fit.util.JCasUtil;
 import org.apache.uima.jcas.JCas;
 import org.apache.uima.jcas.tcas.Annotation;
 
@@ -58,6 +62,7 @@ public class ApplyChangesAnnotator
 	public static final String OP_INSERT = "insert";
 	public static final String OP_REPLACE = "replace";
 	public static final String OP_DELETE = "delete";
+	public static final String OP_CUT = "cut";
 
 	@Override
 	public void process(JCas aJCas)
@@ -66,6 +71,7 @@ public class ApplyChangesAnnotator
 		try {
 			JCas sourceView = aJCas.getView(VIEW_SOURCE);
 			JCas targetView = aJCas.createView(VIEW_TARGET);
+            new Cut(sourceView).process();
 			DocumentMetaData.copy(sourceView, targetView);
 			applyChanges(sourceView, targetView);
 		}
@@ -157,4 +163,127 @@ public class ApplyChangesAnnotator
 		AlignmentStorage.getInstance().put(aSourceView.getCasImpl().getBaseCAS(),
 				aSourceView.getViewName(), aTargetView.getViewName(), as);
 	}
+
+    /**
+     * Pre-processing annotator that converts {@link SofaChangeAnnotation sofa change annotations} with cut operation to
+     * delete sofa change annotations. Note that insert and replace operations, which are not completely inside the cut
+     * area, will be removed because the behaviour is unpredictable when backmapping after holes have been punched in the
+     * insertion or replacement strings. Instead any masking of such operations needs to be added explicitly using
+     * additional cut annotations.
+     *
+     * TODO: Add unit tests
+     */
+    protected class Cut {
+
+        private final JCas sourceView;
+
+        private final TreeMultimap<Integer, SofaChangeAnnotation> endings = TreeMultimap.create(
+                Integer::compare, Comparator.comparing(SofaChangeAnnotation::getEnd)
+        );
+
+        private Set<SofaChangeAnnotation> cuts = new HashSet<>();
+
+        int cutFrom = 0;
+
+        public Cut(JCas sourceView) {
+            this.sourceView = sourceView;
+        }
+
+        public void process() {
+
+            JCasUtil.select(sourceView, SofaChangeAnnotation.class)
+                    .stream()
+                    .collect(java.util.stream.Collectors.toList()).forEach(change -> {
+                if (isCut(change)) {
+                    if (change.getBegin() <= cutFrom) {
+                        // Extend the current cut out area if the overlapping cut ends after the previous
+                        cutFrom = change.getEnd() > cutFrom ? change.getEnd() : cutFrom;
+                    } else if (change.getBegin() > cutFrom) {
+                        // A new cut has been identified. Complete the previous cut now.
+                        cut(cutFrom, change.getBegin());
+                        cutFrom = change.getEnd();
+                    }
+                    cuts.add(change);
+                } else {
+                    endings.put(change.getEnd(), change);
+                }
+            });
+
+            if (cutFrom > 0) {
+                // Completing any final cuts
+                int end = sourceView.getDocumentText().length();
+                if (end > cutFrom) cut(cutFrom, end);
+            }
+
+            // Remove all cuts when done
+            cuts.forEach(c -> {
+                c.removeFromIndexes();
+            });
+
+            // Cleaning up and optimizing. Removing operations inside deletes.
+            // All potential deletes must be collected first to avoid concurrent modification exceptions from CAS.
+            // It is important that only one delete is removed when there are multiple exactly overlapping deletes.
+            Set<SofaChangeAnnotation> keep = new HashSet<>();
+            Set<SofaChangeAnnotation> remove = new HashSet<>();
+            JCasUtil.select(sourceView, SofaChangeAnnotation.class).stream()
+                    .filter(c -> "delete".equals(c.getOperation()))
+                    .forEach(d -> {
+                        if (!remove.contains(d)) {
+                            keep.add(d);
+                            JCasUtil.selectCovered(SofaChangeAnnotation.class, d).stream()
+                                    .forEach(c -> remove.add(c));
+                        }
+                    });
+            remove.forEach(Annotation::removeFromIndexes);
+        }
+
+        public boolean isCut(SofaChangeAnnotation change) {
+            return OP_CUT.equals(change.getOperation());
+        }
+
+        public void cut(int begin, int end) {
+
+            if (end > begin) {
+                SofaChangeAnnotation delete = new SofaChangeAnnotation(sourceView);
+                delete.setOperation(ApplyChangesAnnotator.OP_DELETE);
+                delete.setBegin(begin);
+                delete.setEnd(end);
+                delete.addToIndexes();
+            }
+
+            // Exclude first those changes that are outside the delete area
+            endings.asMap().headMap(begin).values().stream()
+                    .flatMap(c -> c.stream())
+                    .collect(toMultiset())
+                    .forEach(c -> {
+                        endings.remove(c.getEnd(), c);
+                    });
+            // For the remaining truncate any overlapping delete changes and remove the rest
+            endings.asMap().values().stream()
+                    .flatMap(c -> c.stream())
+                    .collect(toMultiset())
+                    .forEach(c -> {
+                        if (ApplyChangesAnnotator.OP_DELETE.equals(c.getOperation())) {
+                            c.removeFromIndexes();
+                            if (c.getEnd() > end) {
+                                c.setBegin(end);
+                                c.addToIndexes();
+                            }
+                        } else {
+                            endings.remove(c.getEnd(), c);
+                            c.removeFromIndexes();
+                        }
+                    });
+
+        }
+
+    }
+
+    public static <T> Collector<T, Multiset<T>, Multiset<T>> toMultiset() {
+        return Collector.of(() -> HashMultiset.create(), Multiset::add, (left, right) -> {
+            left.addAll(right);
+            return left;
+        });
+    }
+
 }
